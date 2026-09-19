@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useNavigate } from '@tanstack/react-router'
 import { Loader2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
-import { IconFacebook, IconGithub } from '@/assets/brand-icons'
-import { sleep, cn } from '@/lib/utils'
+import axios from 'axios'
+import { useAuthStore } from '@/stores/auth-store'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -20,15 +22,13 @@ import { PasswordInput } from '@/components/password-input'
 
 const formSchema = z
   .object({
-    email: z.email({
-      error: (iss) =>
-        iss.input === '' ? 'Please enter your email.' : undefined,
-    }),
+    name: z.string().min(1, 'Name is required').max(255),
+    email: z.string().min(1, 'Email is required').email('Invalid email format'),
     password: z
       .string()
-      .min(1, 'Please enter your password.')
-      .min(7, 'Password must be at least 7 characters long.'),
-    confirmPassword: z.string().min(1, 'Please confirm your password.'),
+      .min(8, 'Password must be at least 8 characters')
+      .max(128),
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords don't match.",
@@ -40,27 +40,44 @@ export function SignUpForm({
   ...props
 }: React.HTMLAttributes<HTMLFormElement>) {
   const [isLoading, setIsLoading] = useState(false)
+  const navigate = useNavigate()
+  const registerAction = useAuthStore((s) => s.register)
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      name: '',
       email: '',
       password: '',
       confirmPassword: '',
     },
   })
 
-  function onSubmit(data: z.infer<typeof formSchema>) {
+  async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
 
-    toast.promise(sleep(2000), {
-      loading: 'Creating account...',
-      success: () => {
-        setIsLoading(false)
-        return `Account created for ${data.email}.`
-      },
-      error: 'Error',
-    })
+    try {
+      await registerAction(data.name, data.email, data.password)
+      toast.success('Account created successfully')
+      navigate({ to: '/', replace: true })
+    } catch (error) {
+      let message = 'Registration failed. Please try again.'
+
+      if (axios.isAxiosError(error) && error.response?.data) {
+        const body = error.response.data
+        if (body?.error?.message) {
+          message = body.error.message
+        } else if (body?.error?.details) {
+          message = body.error.details
+            .map((d: { message: string }) => d.message)
+            .join('. ')
+        }
+      }
+
+      toast.error(message)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -70,6 +87,19 @@ export function SignUpForm({
         className={cn('grid gap-3', className)}
         {...props}
       >
+        <FormField
+          control={form.control}
+          name='name'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
+              <FormControl>
+                <Input placeholder='John Doe' {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name='email'
@@ -113,36 +143,6 @@ export function SignUpForm({
           {isLoading ? <Loader2 className='animate-spin' /> : <UserPlus />}
           Create Account
         </Button>
-
-        <div className='relative my-2'>
-          <div className='absolute inset-0 flex items-center'>
-            <span className='w-full border-t' />
-          </div>
-          <div className='relative flex justify-center text-xs uppercase'>
-            <span className='bg-background px-2 text-muted-foreground'>
-              Or continue with
-            </span>
-          </div>
-        </div>
-
-        <div className='grid grid-cols-2 gap-2'>
-          <Button
-            variant='outline'
-            className='w-full'
-            type='button'
-            disabled={isLoading}
-          >
-            <IconGithub className='h-4 w-4' /> GitHub
-          </Button>
-          <Button
-            variant='outline'
-            className='w-full'
-            type='button'
-            disabled={isLoading}
-          >
-            <IconFacebook className='h-4 w-4' /> Facebook
-          </Button>
-        </div>
       </form>
     </Form>
   )

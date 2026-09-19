@@ -3,8 +3,14 @@ import { toast } from 'sonner'
 
 export function handleServerError(error: unknown) {
   if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
-    console.log(error)
+    if (error instanceof AxiosError) {
+      const { status } = error.response ?? {}
+      const body = error.response?.data
+      const code = body?.error?.code
+      const message = body?.error?.message
+      // eslint-disable-next-line no-console
+      console.log({ status, code, message })
+    }
   }
 
   let errMsg = 'Something went wrong!'
@@ -19,9 +25,9 @@ export function handleServerError(error: unknown) {
   }
 
   if (error instanceof AxiosError) {
-    const title = error.response?.data?.title
-    if (typeof title === 'string' && title.length > 0) {
-      errMsg = title
+    const body = error.response?.data
+    if (body?.error?.message && typeof body.error.message === 'string') {
+      errMsg = body.error.message
     }
   }
 
